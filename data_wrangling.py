@@ -206,7 +206,9 @@ def get_samples(data, n_windows, label):
             feat_names = []
             for row in x.index:
                 for col in x.columns:
-                    feat_names.append('_'.join([row, col]))
+                    #feat_names.append('_'.join([row, col]))
+                    feat_names.append('_'.join([str(row), str(col)]))
+
 
         # sample df
         wdf = pd.DataFrame(x.values.flatten()).T
@@ -274,7 +276,8 @@ def combine_files(subjects):
 
     df = pd.concat(df_list)
 
-    df['label'] = (df['0'].astype(str) + df['1'].astype(str) + df['2'].astype(str)).apply(lambda x: x.index('1'))
+    #df['label'] = (df['0'].astype(str) + df['1'].astype(str) + df['2'].astype(str)).apply(lambda x: x.index('1'))
+    df['label'] = df[['0', '1', '2']].idxmax(axis=1).astype(int)
     df.drop(['0', '1', '2'], axis=1, inplace=True)
 
     df.reset_index(drop=True, inplace=True)
