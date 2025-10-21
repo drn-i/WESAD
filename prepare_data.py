@@ -5,9 +5,9 @@ import argparse
 from sklearn.model_selection import train_test_split
 
 # --- Configuration ---
-WESAD_DATA_FILE = 'm14_merged.csv'
-FEATURE_IMPORTANCE_FILE = 'feature_importance_xgb_stress.csv'
-HYPERTENSION_DATA_FILE = 'hypertension_dataset.csv'
+WESAD_DATA_FILE = '/kaggle/input/wesad-fine-tune-merged/m14_merged.csv'
+FEATURE_IMPORTANCE_FILE = '/kaggle/input/wesad-fine-tune-merged/feature_importance_xgb_stress.csv'
+HYPERTENSION_DATA_FILE = '/kaggle/input/wesad-fine-tune-merged/hypertension_dataset.csv'
 
 N_TOP_FEATURES = 15
 WESAD_LABEL_MAP = {1: 'baseline', 2: 'stress'}
