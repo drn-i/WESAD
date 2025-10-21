@@ -38,9 +38,16 @@ def train_model(model_name, dataset_file, output_dir):
 
     def tokenize_function(examples):
         text = [p + c for p, c in zip(examples["prompt"], examples["completion"])]
+        
         tokenized_inputs = tokenizer(
-            text, padding="max_length", max_length=512, truncation=True
+            text, 
+            padding="max_length", 
+            max_length=512, 
+            truncation=True, 
+            return_tensors="pt"
         )
+        # ------------------------------
+        
         tokenized_inputs["labels"] = tokenized_inputs["input_ids"].clone()
         return tokenized_inputs
 
