@@ -3,10 +3,12 @@ import json
 import sys
 import argparse
 from sklearn.model_selection import train_test_split
+import numpy as np
 
 # --- Configuration ---
-WESAD_DATA_FILE = '/kaggle/input/wesad-fine-tune-merged/m14_merged.csv'
-FEATURE_IMPORTANCE_FILE = '/kaggle/input/wesad-fine-tune-merged/feature_importance_xgb_stress.csv'
+# Make paths configurable - change these to your actual paths
+WESAD_DATA_FILE = 'data/m14_merged.csv'  # Changed from hardcoded kaggle path
+FEATURE_IMPORTANCE_FILE = 'artifacts/feature_importance_xgb_stress.csv'  # Changed path
 HYPERTENSION_DATA_FILE = '/kaggle/input/wesad-fine-tune-merged/hypertension_dataset.csv'
 
 N_TOP_FEATURES = 15
@@ -51,14 +53,26 @@ def save_to_jsonl(dataset, filename):
 
 # --- Processing Modes ---
 
-def process_wesad(mode):
-    """Prepares WESAD data, splitting 80/20."""
-    print(f"--- Processing WESAD (mode: {mode}) ---")
+def process_wesad(mode, split_method='random', train_subjects=None, test_subjects=None):
+    """Prepares WESAD data with optional subject-level splitting.
+    
+    Args:
+        mode: 'top' or 'full' for feature selection
+        split_method: 'random' (80/20) or 'subject' (subject-level split)
+        train_subjects: list of subject IDs for training (if split_method='subject')
+        test_subjects: list of subject IDs for testing (if split_method='subject')
+    """
+    print(f"--- Processing WESAD (mode: {mode}, split: {split_method}) ---")
     try:
         df = pd.read_csv(WESAD_DATA_FILE)
     except FileNotFoundError:
-        print(f"Error: Could not find {WESAD_DATA_FILE}.")
-        sys.exit(1)
+        # Try alternative path
+        try:
+            df = pd.read_csv('data/m14_merged.csv', index_col=0)
+        except:
+            print(f"Error: Could not find WESAD data file.")
+            print(f"Tried: {WESAD_DATA_FILE} and data/m14_merged.csv")
+            sys.exit(1)
 
     if mode == 'top':
         try:
@@ -66,8 +80,14 @@ def process_wesad(mode):
             feature_names = df_feats.nlargest(N_TOP_FEATURES, 'importance')['feature'].tolist()
             print(f"Using Top {N_TOP_FEATURES} features.")
         except FileNotFoundError:
-            print(f"Error: Could not find {FEATURE_IMPORTANCE_FILE}.")
-            sys.exit(1)
+            # Try alternative path
+            try:
+                df_feats = pd.read_csv('artifacts/feature_importance_xgb_stress.csv')
+                feature_names = df_feats.nlargest(N_TOP_FEATURES, 'importance')['feature'].tolist()
+                print(f"Using Top {N_TOP_FEATURES} features.")
+            except:
+                print(f"Error: Could not find {FEATURE_IMPORTANCE_FILE}.")
+                sys.exit(1)
     elif mode == 'full':
         feature_names = [col for col in df.columns if col not in WESAD_EXCLUDE_COLS]
         print(f"Using {len(feature_names)} features.")
@@ -77,10 +97,38 @@ def process_wesad(mode):
 
     df_filtered = df[df['label'].isin(WESAD_LABEL_MAP.keys())].copy()
     
-    print("Performing 80/20 train-test split (stratified)...")
-    df_train, df_test = train_test_split(
-        df_filtered, test_size=0.2, random_state=42, stratify=df_filtered['label']
-    )
+    # Subject-level splitting
+    if split_method == 'subject':
+        if train_subjects is None or test_subjects is None:
+            # Default: 12 train, 3 test
+            all_subjects = sorted(df_filtered['subject'].unique())
+            if len(all_subjects) < 15:
+                print(f"Warning: Only found {len(all_subjects)} subjects, expected 15")
+            train_subjects = all_subjects[:12]
+            test_subjects = all_subjects[12:15] if len(all_subjects) >= 15 else all_subjects[12:]
+        
+        df_train = df_filtered[df_filtered['subject'].isin(train_subjects)].copy()
+        df_test = df_filtered[df_filtered['subject'].isin(test_subjects)].copy()
+        
+        print(f"Subject-level split:")
+        print(f"  Training subjects: {sorted(train_subjects)} ({len(train_subjects)} subjects)")
+        print(f"  Test subjects: {sorted(test_subjects)} ({len(test_subjects)} subjects)")
+        print(f"  Training samples: {len(df_train)}")
+        print(f"  Test samples: {len(df_test)}")
+        
+        # Check label distribution
+        print(f"  Train label distribution:")
+        print(df_train['label'].value_counts().sort_index())
+        print(f"  Test label distribution:")
+        print(df_test['label'].value_counts().sort_index())
+        
+    else:
+        # Random 80/20 split (OLD METHOD - not recommended but kept for backward compatibility)
+        print("Performing 80/20 train-test split (stratified)...")
+        print("WARNING: This method does NOT respect subject groups - may cause data leakage!")
+        df_train, df_test = train_test_split(
+            df_filtered, test_size=0.2, random_state=42, stratify=df_filtered['label']
+        )
     
     # Process and save training data
     train_dataset = []
@@ -134,12 +182,53 @@ def main():
         choices=['wesad-top', 'wesad-full', 'hypertension'],
         help="The dataset and mode to prepare."
     )
+    parser.add_argument(
+        '--split-method',
+        type=str,
+        default='subject',
+        choices=['random', 'subject'],
+        help="Split method: 'random' (80/20) or 'subject' (subject-level split, recommended)"
+    )
+    parser.add_argument(
+        '--train-subjects',
+        type=int,
+        nargs='+',
+        default=None,
+        help="List of subject IDs for training (e.g., --train-subjects 2 3 4 5 6 7 8 9 10 11 13 14)"
+    )
+    parser.add_argument(
+        '--test-subjects',
+        type=int,
+        nargs='+',
+        default=None,
+        help="List of subject IDs for testing (e.g., --test-subjects 15 16 17)"
+    )
+    parser.add_argument(
+        '--data-file',
+        type=str,
+        default=None,
+        help="Path to WESAD data file (overrides default)"
+    )
+    parser.add_argument(
+        '--feature-file',
+        type=str,
+        default=None,
+        help="Path to feature importance file (overrides default)"
+    )
+    
     args = parser.parse_args()
+    
+    # Override file paths if provided
+    global WESAD_DATA_FILE, FEATURE_IMPORTANCE_FILE
+    if args.data_file:
+        WESAD_DATA_FILE = args.data_file
+    if args.feature_file:
+        FEATURE_IMPORTANCE_FILE = args.feature_file
 
     if args.mode == 'wesad-top':
-        process_wesad('top')
+        process_wesad('top', args.split_method, args.train_subjects, args.test_subjects)
     elif args.mode == 'wesad-full':
-        process_wesad('full')
+        process_wesad('full', args.split_method, args.train_subjects, args.test_subjects)
     elif args.mode == 'hypertension':
         process_hypertension()
 

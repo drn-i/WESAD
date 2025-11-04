@@ -6,7 +6,35 @@ from transformers import (
     AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
 )
 
-def train_model(model_name, dataset_file, output_dir):
+def get_model_config(model_name):
+    """Returns appropriate training config based on model size."""
+    if '1B' in model_name or '1.1B' in model_name:
+        return {
+            'per_device_train_batch_size': 4,
+            'gradient_accumulation_steps': 2,
+            'max_length': 512
+        }
+    elif '3B' in model_name or '3.1B' in model_name:
+        return {
+            'per_device_train_batch_size': 2,
+            'gradient_accumulation_steps': 4,
+            'max_length': 512
+        }
+    elif '8B' in model_name or '8.1B' in model_name:
+        return {
+            'per_device_train_batch_size': 1,
+            'gradient_accumulation_steps': 8,
+            'max_length': 512
+        }
+    else:
+        # Default for unknown models
+        return {
+            'per_device_train_batch_size': 2,
+            'gradient_accumulation_steps': 4,
+            'max_length': 512
+        }
+
+def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rate=2e-5):
     """Loads and fine-tunes a model on a given dataset."""
     
     print(f"--- Starting Training ---")
@@ -18,6 +46,10 @@ def train_model(model_name, dataset_file, output_dir):
     USE_BF16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
     if not USE_BF16:
         print("Warning: BF16 not supported. Training in FP16/FP32 may be slower or less stable.")
+
+    # Get model-specific config
+    model_config = get_model_config(model_name)
+    print(f"Model config: {model_config}")
 
     # --- 1. Load Tokenizer and Model ---
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -42,11 +74,10 @@ def train_model(model_name, dataset_file, output_dir):
         tokenized_inputs = tokenizer(
             text, 
             padding="max_length", 
-            max_length=512, 
+            max_length=model_config['max_length'], 
             truncation=True, 
             return_tensors="pt"
         )
-        # ------------------------------
         
         tokenized_inputs["labels"] = tokenized_inputs["input_ids"].clone()
         return tokenized_inputs
@@ -59,16 +90,19 @@ def train_model(model_name, dataset_file, output_dir):
     # --- 3. Set Up Training ---
     training_args = TrainingArguments(
         output_dir=output_dir,
-        num_train_epochs=3,
-        per_device_train_batch_size=2, # Start small for full-tuning
+        num_train_epochs=num_epochs,
+        per_device_train_batch_size=model_config['per_device_train_batch_size'],
+        gradient_accumulation_steps=model_config['gradient_accumulation_steps'],
         bf16=USE_BF16,
         logging_dir=f"{output_dir}/logs",
         logging_strategy="steps",
         logging_steps=10,
         save_strategy="epoch",
-        learning_rate=2e-5,
+        learning_rate=learning_rate,
         weight_decay=0.01,
         warmup_ratio=0.03,
+        save_total_limit=2,  # Keep only last 2 checkpoints
+        load_best_model_at_end=False,
     )
 
     trainer = Trainer(
@@ -90,9 +124,11 @@ def train_model(model_name, dataset_file, output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fine-tune a Llama model.")
-    parser.add_argument("--model_name", type=str, default="TinyLlama/TinyLlama-1.1B-Chat-v1.0", help="Base model to fine-tune.")
+    parser.add_argument("--model_name", type=str, required=True, help="Base model to fine-tune.")
     parser.add_argument("--dataset_file", type=str, required=True, help="Path to the .jsonl training file.")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save the fine-tuned model.")
+    parser.add_argument("--num_epochs", type=int, default=3, help="Number of training epochs.")
+    parser.add_argument("--learning_rate", type=float, default=2e-5, help="Learning rate.")
     
     args = parser.parse_args()
-    train_model(args.model_name, args.dataset_file, args.output_dir)
+    train_model(args.model_name, args.dataset_file, args.output_dir, args.num_epochs, args.learning_rate)
