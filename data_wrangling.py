@@ -223,12 +223,12 @@ def get_samples(data, n_windows, label):
     return pd.concat(samples)
 
 
-def make_patient_data(subject_id):
+def make_patient_data(subject_id, data_path='data/WESAD'):
     global savePath
     global WINDOW_IN_SECONDS
 
     # Make subject data object for Sx
-    subject = SubjectData(main_path='data/WESAD', subject_number=subject_id)
+    subject = SubjectData(main_path=data_path, subject_number=subject_id)
 
     # Empatica E4 data - now with resp
     e4_data_dict = subject.get_wrist_data()
@@ -292,11 +292,25 @@ def combine_files(subjects):
 
 if __name__ == '__main__':
 
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Process WESAD subject data.')
+    parser.add_argument(
+        '--data_path',
+        type=str,
+        default='data/WESAD',
+        help='Path to the main WESAD data directory (default: data/WESAD)'
+    )
+
+    args = parser.parse_args()
+    data_path = args.data_path
+
+
     subject_ids = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17]
 
     for patient in subject_ids:
         print(f'Processing data for S{patient}...')
-        make_patient_data(patient)
+        make_patient_data(patient, data_path=data_path)
 
     combine_files(subject_ids)
     print('Processing complete.')

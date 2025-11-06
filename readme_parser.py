@@ -52,7 +52,7 @@ class rparser:
         }
     }
     
-    DATA_PATH = 'data/WESAD/'
+    DATA_PATH = '/kaggle/input/wesad-wearable-stress-affect-detection-dataset/WESAD'
     parse_file_suffix = '_readme.txt'
     
     
