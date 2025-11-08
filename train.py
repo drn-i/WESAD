@@ -1,10 +1,23 @@
 import os
 import torch
 import argparse
+import random
+import numpy as np
 from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
 )
+
+def set_seed(seed=42):
+    """Set random seed for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # For deterministic behavior
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 def get_model_config(model_name):
     """Returns appropriate training config based on model size."""
@@ -34,8 +47,12 @@ def get_model_config(model_name):
             'max_length': 512
         }
 
-def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rate=2e-5):
+def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rate=2e-5, seed=42):
     """Loads and fine-tunes a model on a given dataset."""
+    
+    # Set random seed for reproducibility
+    set_seed(seed)
+    print(f"Random seed set to: {seed}")
     
     print(f"--- Starting Training ---")
     print(f"Model: {model_name}")
@@ -61,6 +78,17 @@ def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rat
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Calculate and print model parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\n{'='*60}")
+    print(f"Model Parameters Summary:")
+    print(f"  Total parameters: {total_params:,}")
+    print(f"  Trainable parameters: {trainable_params:,}")
+    print(f"  Non-trainable parameters: {total_params - trainable_params:,}")
+    print(f"  Trainable percentage: {100 * trainable_params / total_params:.2f}%")
+    print(f"{'='*60}\n")
+
     # --- 2. Load and Prepare the Dataset ---
     try:
         dataset = load_dataset('json', data_files={'train': dataset_file})['train']
@@ -75,11 +103,12 @@ def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rat
             text, 
             padding="max_length", 
             max_length=model_config['max_length'], 
-            truncation=True, 
-            return_tensors="pt"
+            truncation=True
+            # I Removed return_tensors="pt"
         )
         
-        tokenized_inputs["labels"] = tokenized_inputs["input_ids"].clone()
+        # Create labels by copying input_ids (as list, not tensor)
+        tokenized_inputs["labels"] = tokenized_inputs["input_ids"].copy()
         return tokenized_inputs
 
     print("Tokenizing dataset...")
@@ -94,6 +123,7 @@ def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rat
         per_device_train_batch_size=model_config['per_device_train_batch_size'],
         gradient_accumulation_steps=model_config['gradient_accumulation_steps'],
         bf16=USE_BF16,
+        seed=seed,
         logging_dir=f"{output_dir}/logs",
         logging_strategy="steps",
         logging_steps=10,
@@ -101,8 +131,9 @@ def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rat
         learning_rate=learning_rate,
         weight_decay=0.01,
         warmup_ratio=0.03,
-        save_total_limit=2,  # Keep only last 2 checkpoints
+        save_total_limit=2,
         load_best_model_at_end=False,
+        data_seed=seed,
     )
 
     trainer = Trainer(
@@ -129,6 +160,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save the fine-tuned model.")
     parser.add_argument("--num_epochs", type=int, default=3, help="Number of training epochs.")
     parser.add_argument("--learning_rate", type=float, default=2e-5, help="Learning rate.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
     
     args = parser.parse_args()
-    train_model(args.model_name, args.dataset_file, args.output_dir, args.num_epochs, args.learning_rate)
+    train_model(args.model_name, args.dataset_file, args.output_dir, args.num_epochs, args.learning_rate, args.seed)
