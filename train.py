@@ -25,19 +25,19 @@ def get_model_config(model_name):
         return {
             'per_device_train_batch_size': 4,
             'gradient_accumulation_steps': 2,
-            'max_length': 512
+            'max_length': 1024
         }
     elif '3B' in model_name or '3.1B' in model_name:
         return {
             'per_device_train_batch_size': 2,
             'gradient_accumulation_steps': 4,
-            'max_length': 512
+            'max_length': 1024
         }
     elif '8B' in model_name or '8.1B' in model_name:
         return {
             'per_device_train_batch_size': 1,
             'gradient_accumulation_steps': 8,
-            'max_length': 512
+            'max_length': 1024
         }
     else:
         # Default for unknown models
@@ -107,18 +107,8 @@ def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rat
             # I Removed return_tensors="pt"
         )
         
-        # Create labels by copying input_ids
-        labels = []
-        for i, input_ids in enumerate(tokenized_inputs["input_ids"]):
-            label = input_ids.copy()
-            # Set padding tokens to -100 (ignored in loss calculation)
-            attention_mask = tokenized_inputs["attention_mask"][i]
-            for j, mask_val in enumerate(attention_mask):
-                if mask_val == 0:  # This is a padding position
-                    label[j] = -100
-            labels.append(label)
-        
-        tokenized_inputs["labels"] = labels
+        # Create labels by copying input_ids (as list, not tensor)
+        tokenized_inputs["labels"] = tokenized_inputs["input_ids"].copy()
         return tokenized_inputs
 
     print("Tokenizing dataset...")

@@ -28,17 +28,17 @@ def get_model_config(model_name, fine_tune_method="full"):
         '1B': {
             'per_device_train_batch_size': 4,
             'gradient_accumulation_steps': 2,
-            'max_length': 512
+            'max_length': 1024
         },
         '3B': {
             'per_device_train_batch_size': 2,
             'gradient_accumulation_steps': 4,
-            'max_length': 512
+            'max_length': 1024
         },
         '8B': {
             'per_device_train_batch_size': 1,
             'gradient_accumulation_steps': 8,
-            'max_length': 512
+            'max_length': 1024
         }
     }
     
