@@ -107,8 +107,18 @@ def train_model(model_name, dataset_file, output_dir, num_epochs=3, learning_rat
             # I Removed return_tensors="pt"
         )
         
-        # Create labels by copying input_ids (as list, not tensor)
-        tokenized_inputs["labels"] = tokenized_inputs["input_ids"].copy()
+        # Create labels by copying input_ids
+        labels = []
+        for i, input_ids in enumerate(tokenized_inputs["input_ids"]):
+            label = input_ids.copy()
+            # Set padding tokens to -100 (ignored in loss calculation)
+            attention_mask = tokenized_inputs["attention_mask"][i]
+            for j, mask_val in enumerate(attention_mask):
+                if mask_val == 0:  # This is a padding position
+                    label[j] = -100
+            labels.append(label)
+        
+        tokenized_inputs["labels"] = labels
         return tokenized_inputs
 
     print("Tokenizing dataset...")
